@@ -32,6 +32,7 @@ import java.io.Reader;
 import java.io.UnsupportedEncodingException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -39,6 +40,10 @@ public class DiscoToProto3ConverterApp {
 
   public static void main(String[] args) throws IOException {
     Map<String, String> parsedArgs = new HashMap<>();
+
+    // Optional Parameters
+    parsedArgs.put("--service_blacklist", "");
+    parsedArgs.put("--message_blacklist", "");
 
     for (String arg : args) {
       String[] argNameVal = arg.split("=");
@@ -49,16 +54,22 @@ public class DiscoToProto3ConverterApp {
     converter.convert(
         parsedArgs.get("--discovery_doc_path"),
         parsedArgs.get("--output_root_path"),
-        parsedArgs.get("--output_file_name"));
+        parsedArgs.get("--output_file_name"),
+        parsedArgs.get("--service_blacklist"),
+        parsedArgs.get("--message_blacklist"));
   }
 
-  public void convert(String discoveryDocPath, String outputRootPath, String outputFileName)
+  public void convert(String discoveryDocPath, String outputRootPath, String outputFileName, String serviceBlacklist, String messageBlacklist)
       throws IOException {
     DiscoToProto3ConverterApp app = new DiscoToProto3ConverterApp();
     Document document = app.createDocument(discoveryDocPath);
     DocumentToProtoConverter converter =
         new DocumentToProtoConverter(
-            document, Paths.get(discoveryDocPath).getFileName().toString());
+            document,
+            Paths.get(discoveryDocPath).getFileName().toString(),
+            Arrays.asList(serviceBlacklist.split(",")),
+            Arrays.asList(messageBlacklist.split(","))
+        );
     String protoPkg = converter.getProtoFile().getProtoPkg();
     try (PrintWriter pw = app.makeDefaultDirsAndWriter(outputRootPath, outputFileName, protoPkg)) {
       Proto3Writer writer = new Proto3Writer();

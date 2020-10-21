@@ -30,14 +30,20 @@ import java.util.ListIterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.io.IOException;
 
 public class DocumentToProtoConverter {
   private final ProtoFile protoFile;
   private final Map<String, Message> allMessages = new LinkedHashMap<>();
   private final Map<String, GrpcService> allServices = new LinkedHashMap<>();
   private final Map<String, Option> allResourceOptions = new LinkedHashMap<>();
+  private List<String> serviceBlacklist;
+  private List<String> messageBlacklist;
 
-  public DocumentToProtoConverter(Document document, String documentFileName) {
+  public DocumentToProtoConverter(
+    Document document, String documentFileName, List<String> serviceBlacklist, List<String> messageBlacklist) {
+    this.serviceBlacklist = serviceBlacklist;
+    this.messageBlacklist = messageBlacklist;
     this.protoFile = readDocumentMetadata(document, documentFileName);
     readSchema(document);
     readResources(document);
@@ -74,7 +80,6 @@ public class DocumentToProtoConverter {
     for (Map.Entry<String, Schema> entry : document.schemas().entrySet()) {
       schemaToField(entry.getValue());
     }
-
     for (Message message : allMessages.values()) {
       resolveReferences(message);
     }
@@ -211,12 +216,12 @@ public class DocumentToProtoConverter {
     Message existingMessage = allMessages.get(valueType.getName());
 
     if (existingMessage == null || existingMessage.isRef()) {
-      allMessages.put(valueType.getName(), valueType);
+      allMessagesPut(valueType.getName(), valueType);
     } else if (!valueType.isRef()) {
       if (valueType.getDescription() != null
           && existingMessage.getDescription() != null
           && valueType.getDescription().length() < existingMessage.getDescription().length()) {
-        allMessages.put(valueType.getName(), valueType);
+        allMessagesPut(valueType.getName(), valueType);
       }
       if (!valueType.equals(existingMessage)) {
         if (!"Errors".equals(valueType.getName())) {
@@ -336,7 +341,7 @@ public class DocumentToProtoConverter {
         }
 
         // TODO: add logic to determine non-required method_signature options
-        
+
         Option methodHttpOption = new Option("google.api.http");
         methodHttpOption
             .getProperties()
@@ -349,7 +354,7 @@ public class DocumentToProtoConverter {
           input.getFields().add(new Field(requestFieldName, request, false, null, null));
           methodHttpOption.getProperties().put("body", requestFieldName);
         }
-        allMessages.put(requestName, input);
+        allMessagesPut(requestName, input);
 
         // Response
         Message output;
@@ -359,7 +364,7 @@ public class DocumentToProtoConverter {
           String responseName = getRpcMessageName(method, "response").toUpperCamel();
           String outputDescription = getOutputMessageDescription(grpcServiceName, methodname);
           output = new Message(responseName, false, false, outputDescription);
-          allMessages.put(responseName, output);
+          allMessagesPut(responseName, output);
         }
 
         // Method
@@ -374,8 +379,16 @@ public class DocumentToProtoConverter {
       Option authScopesOpt = new Option("google.api.oauth_scopes");
       authScopesOpt.getProperties().put("", String.join(",", authScopes));
       service.getOptions().add(authScopesOpt);
-      allServices.put(service.getName(), service);
+      if (!serviceBlacklist.contains(service.getName())) {
+        allServices.put(service.getName(), service);
+      }
     }
+  }
+
+  private void allMessagesPut(String messageName, Message message) {
+      if (!messageBlacklist.contains(messageName)) {
+        allMessages.put(messageName, message);
+      }
   }
 
   private String getInputMessageDescription(String serviceName, String methodName) {
